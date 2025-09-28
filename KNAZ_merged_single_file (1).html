@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KNAZ — لوحة موحدة (الحوادث + المطالبات + الطلبات/المشتريات)</title>
+  <!-- Fonts & Icons -->
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+  <!-- Tailwind (used by orders/purchases UI) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- jsPDF for exports -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <style>
+    :root {
+      --primary-color: #22366d;
+      --secondary-color: #2584c6;
+      --accent-color: #4cc9f0;
+      --success-color: #4ade80;
+      --warning-color: #f59e0b;
+      --danger-color: #ef4444;
+      --sidebar-bg: #1e293b;
+      --sidebar-text: #f1f5f9;
+      --content-bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text-dark: #1e293b;
+      --text-light: #64748b;
+      --border-color: #e2e8f0;
+      --shadow-light: 0 4px 6px -1px rgba(0,0,0,.1);
+      --shadow-medium: 0 10px 15px -3px rgba(0,0,0,.1);
+      --shadow-heavy: 0 20px 25px -5px rgba(0,0,0,.1);
+
+      /* palette reused by orders UI */
+      --bg-soft:#f7f9fc;
+      --text:#0f172a;
+      --ring:#93c5fd;
+      --border:#e2e8f0;
+    }
+    * { box-sizing: border-box; font-family: 'Tajawal', system-ui, -apple-system, Segoe UI, Roboto, Arial, 'Noto Sans', sans-serif; }
+    body { background: linear-gradient(135deg,#f0f4f8 0%,#e2e8f0 100%); color: var(--text-dark); min-height: 100vh; overflow-x: hidden; }
+
+    /* Shell layout (from incidents/claims app) */
+    .container { display: flex; min-height: 100vh; }
+    .sidebar { width: 280px; background: linear-gradient(180deg,var(--sidebar-bg) 0%,#0f172a 100%); color: var(--sidebar-text); box-shadow: var(--shadow-heavy); }
+    .sidebar-header { padding: 22px 18px; border-bottom: 1px solid rgba(255,255,255,.1); }
+    .logo { font-size: 2rem; font-weight: 700; background: linear-gradient(90deg,#2584c6,#22366d); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .sidebar-menu { list-style: none; margin: 0; padding: 0; }
+    .sidebar-menu a { display: flex; align-items: center; padding: 14px 18px; color: var(--sidebar-text); text-decoration: none; transition: .2s; }
+    .sidebar-menu a:hover,.sidebar-menu a.active { background: rgba(255,255,255,.08); }
+    .sidebar-menu i { margin-left: 12px; width: 24px; text-align: center; }
+
+    .main { flex: 1; display: flex; flex-direction: column; }
+    .top { background: linear-gradient(90deg,var(--card-bg) 0%,#f8fafc 100%); padding: 16px 24px; box-shadow: var(--shadow-light); display: flex; align-items: center; justify-content: space-between; }
+    .content { padding: 18px; overflow: auto; }
+
+    .card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 14px; box-shadow: var(--shadow-medium); padding: 16px; }
+    .page-title { margin: 0 0 12px 0; font-weight: 700; }
+
+    /* --- Helpers from orders file (lightly adapted) --- */
+    .btn{display:inline-flex;align-items:center;justify-content:center;border-radius:12px;padding:10px 16px;font-weight:600;transition:all .2s ease;border:1px solid transparent}
+    .btn-primary{background:linear-gradient(135deg,var(--primary-color),var(--secondary-color));color:#fff}
+    .btn-primary:hover{filter:brightness(.98)}
+    .btn-ghost{background:#eef2f7;color:var(--text)}
+    .btn-ghost:hover{background:#e2e8f0}
+    .btn-danger{background:linear-gradient(135deg,var(--danger-color),#dc2626);color:#fff}
+    .btn-danger:hover{filter:brightness(.98)}
+    .label{font-size:.9rem;color:var(--text-light)}
+    .input{width:100%;border-radius:12px;border:1px solid var(--border);padding:10px 12px;background:#fff}
+    .input:focus{outline:none;border-color:var(--secondary-color);box-shadow:0 0 0 3px rgba(37,132,198,.18)}
+    .badge{display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;font-size:.78rem}
+    .badge-success{background:rgba(74,222,128,.15);color:#15803d}
+    .badge-danger{background:rgba(239,68,68,.12);color:#b91c1c}
+    .tabs button{background:#eef2f7}
+    .tabs button[aria-selected="true"]{background:linear-gradient(135deg,var(--primary-color),var(--secondary-color));color:#fff}
+
+    .table th{color:var(--text-light);font-weight:600;text-align:right}
+    .req-row{display:grid;grid-template-columns:repeat(12, minmax(0,1fr));gap:1rem;align-items:start}
+    @media (max-width: 768px){.req-row{grid-template-columns:1fr}}
+    .req-actions{display:flex;gap:.5rem}
+
+    @media(max-width:980px){.sidebar{width:86px}.sidebar-menu a span{display:none}}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">KNAZ</div>
+        <small>نظام موحد — إدارة</small>
+      </div>
+      <ul class="sidebar-menu">
+        <li><a class="active" href="#" data-screen="dashboard"><i class="fa-solid fa-gauge"></i><span>لوحة التحكم</span></a></li>
+        <li><a href="#" data-screen="incidents"><i class="fa-solid fa-car-burst"></i><span>الحوادث</span></a></li>
+        <li><a href="#" data-screen="claims"><i class="fa-solid fa-file-invoice-dollar"></i><span>المطالبات</span></a></li>
+        <li><a href="#" data-screen="orders"><i class="fa-solid fa-cart-shopping"></i><span>الطلبات/المشتريات</span></a></li>
+        <li><a href="#" data-screen="settings"><i class="fa-solid fa-gear"></i><span>الإعدادات</span></a></li>
+      </ul>
+    </aside>
+
+    <main class="main">
+      <div class="top">
+        <h3 id="title"><i class="fa-solid fa-gauge"></i> لوحة التحكم</h3>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <div>المستخدم: <strong id="userName">—</strong></div>
+          <label class="text-sm text-gray-500">الدور</label>
+          <select id="roleSel" class="input" style="width:auto"></select>
+        </div>
+      </div>
+      <div id="screen" class="content"></div>
+    </main>
+  </div>
+
+  <!-- ---- Templates: Incidents / Claims (from second app) ---- -->
+  <template id="incidentsTpl">
+    <div class="card">
+      <h3 class="page-title"><i class="fa-solid fa-pen-to-square"></i> تسجيل حادث</h3>
+      <form id="incidentForm">
+        <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px;">
+          <div><label>اسم العميل</label><input class="input" id="cName" required /></div>
+          <div><label>رقم الهوية</label><input class="input" id="cNid" inputmode="numeric" pattern="[0-9]{10}" required /><div class="text-sm text-gray-500">10 أرقام</div></div>
+          <div><label>تاريخ الحادث</label><input type="date" class="input" id="accDate" required /></div>
+          <div><label>رقم الحادث</label><input class="input" id="accNo" required /></div>
+        </div>
+
+        <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top:12px;">
+          <div><label>نوع السيارة</label><input class="input" id="carType" required /></div>
+          <div><label>رقم اللوحة</label><input class="input" id="plate" required /></div>
+          <div>
+            <label>موديل السيارة</label>
+            <select class="input" id="model" required><option value="">اختر</option></select>
+          </div>
+          <div>
+            <label>جهة مباشرة الحادث</label>
+            <select class="input" id="authority" required>
+              <option value="">اختر</option><option>نجم</option><option>المرور</option><option>أخرى</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top:12px;">
+          <div>
+            <label>نسبة الخطأ</label>
+            <select class="input" id="fault" required>
+              <option value="">اختر</option><option>0%</option><option>25%</option><option>50%</option><option>75%</option><option>100%</option>
+            </select>
+          </div>
+          <div><label>اسم شركة التأمين</label><input class="input" id="insurer" required /></div>
+          <div><label>تاريخ التقدير</label><input type="date" class="input" id="estDate" required /></div>
+          <div><label>رقم التقدير</label><input class="input" id="estNo" required /></div>
+        </div>
+
+        <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top:12px;">
+          <div><label>اسم المقدر</label><input class="input" id="estPerson" required /></div>
+          <div><label>مبلغ التقدير (بالريال)</label><input class="input" id="estAmount" type="number" min="0" step="0.01" required /></div>
+          <div><label>ملاحظات</label><input class="input" id="notes" placeholder="اختياري" /></div>
+        </div>
+
+        <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top:12px;">
+          <div>
+            <label><i class="fa-solid fa-images"></i> صور الحادث</label>
+            <div class="border-2 border-dashed rounded-xl p-4 text-center">
+              <input id="photos" type="file" accept="image/*" multiple />
+              <div class="text-sm text-gray-500">يمكن رفع عدة صور</div>
+            </div>
+            <div id="photosPreview" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px"></div>
+          </div>
+          <div><label><i class="fa-solid fa-file-pdf"></i> تقرير الحادث (PDF)</label><input id="reportPdf" type="file" accept="application/pdf" class="input" required /></div>
+          <div><label><i class="fa-solid fa-file-pdf"></i> ملف التقدير (PDF)</label><input id="estimatePdf" type="file" accept="application/pdf" class="input" required /></div>
+        </div>
+
+        <div class="flex gap-2 flex-wrap mt-3">
+          <button class="btn btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> حفظ</button>
+          <button id="resetBtn" class="btn btn-ghost" type="button"><i class="fa-solid fa-rotate"></i> تعديل/مسح الحقول</button>
+        </div>
+        <div class="bg-slate-100 text-slate-600 rounded-lg p-3 mt-2 text-sm">جميع الحقول أعلاه <strong>إلزامية</strong> ما عدا الملاحظات.</div>
+      </form>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <h3 class="page-title"><i class="fa-solid fa-list"></i> قائمة الحوادث</h3>
+      <div class="overflow-x-auto">
+        <table id="incidentsTable" class="min-w-full">
+          <thead><tr><th>#</th><th>العميل</th><th>التاريخ</th><th>السيارة</th><th>اللوحة</th><th>التأمين</th><th>الإجراءات</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="mt-3">
+        <button id="exportIncidentsPdf" class="btn btn-primary" type="button"><i class="fa-regular fa-file-pdf"></i> تصدير PDF للحوادث</button>
+      </div>
+    </div>
+  </template>
+
+  <template id="claimsTpl">
+    <div class="card">
+      <h3 class="page-title"><i class="fa-solid fa-file-invoice-dollar"></i> المطالبات</h3>
+      <div class="overflow-x-auto">
+        <table id="claimsTable" class="min-w-full">
+          <thead>
+            <tr>
+              <th>#</th><th>نوع السيارة</th><th>رقم اللوحة</th><th>شركة التأمين</th><th>رقم التقدير</th><th>مبلغ التعويض</th><th>الملفات</th><th>الحالة</th><th>تحديث</th><th>نموذج</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="mt-3">
+        <button id="exportClaimsPdf" class="btn btn-primary" type="button"><i class="fa-regular fa-file-pdf"></i> تصدير PDF للمطالبات</button>
+      </div>
+    </div>
+  </template>
+
+  <template id="dashboardTpl">
+    <div class="grid md:grid-cols-2 gap-3">
+      <div class="card"><h3 class="page-title flex items-center gap-2"><i class="fa-solid fa-car-burst"></i> ملخص الحوادث</h3><div><b>عدد الحوادث:</b> <span id="kInc"></span></div></div>
+      <div class="card"><h3 class="page-title flex items-center gap-2"><i class="fa-solid fa-file-invoice-dollar"></i> ملخص المطالبات</h3><div><b>عدد المطالبات:</b> <span id="kClm"></span></div></div>
+      <div class="card md:col-span-2">
+        <h3 class="page-title flex items-center gap-2"><i class="fa-solid fa-cart-shopping"></i> حالة الاتصال بخادم الطلبات/المشتريات</h3>
+        <div class="flex items-center gap-3 flex-wrap">
+          <input id="ord_apiBase" class="input" placeholder="مثال: http://localhost:4000" style="max-width:320px" />
+          <button id="ord_saveApiBase" class="btn btn-ghost">حفظ</button>
+          <span id="ord_apiStatus" class="badge"></span>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <template id="settingsTpl">
+    <div class="card">
+      <h3 class="page-title"><i class="fa-solid fa-gear"></i> الإعدادات</h3>
+      <div class="flex gap-2 mb-3">
+        <button class="btn btn-ghost tabBtn active" data-tab="users">المستخدمون</button>
+        <button class="btn btn-ghost tabBtn" data-tab="perms">الصلاحيات</button>
+      </div>
+      <div id="settingsContent"></div>
+    </div>
+  </template>
+
+  <!-- ---- Orders/Purchases screen (rebuilt & namespaced IDs) ---- -->
+  <template id="ordersTpl">
+    <div class="space-y-4">
+      <div class="card">
+        <div class="flex items-center justify-between gap-3 flex-wrap">
+          <div class="flex items-center gap-3">
+            <div class="rounded-lg bg-white w-10 h-10 flex items-center justify-center border"><i class="fa-solid fa-gear"></i></div>
+            <div>
+              <div class="font-bold">KNAZ — نظام الطلبات والمشتريات</div>
+              <div class="text-xs opacity-80">متصل بخادم (Node/Express + SQLite)</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-sm" id="ord_today"></span>
+            <span id="ord_userInfo" class="text-sm hidden"></span>
+            <button id="ord_btnLogin" class="btn btn-ghost">تسجيل الدخول</button>
+            <button id="ord_btnLogout" class="btn btn-ghost hidden">تسجيل الخروج</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="grid md:grid-cols-[1fr_auto] gap-3 items-end">
+          <div>
+            <label class="label">رابط الـAPI</label>
+            <input id="ord_apiBase2" class="input" placeholder="مثال: http://localhost:4000" />
+          </div>
+          <div class="flex gap-2 md:justify-end">
+            <button id="ord_saveApiBase2" class="btn btn-ghost">حفظ</button>
+            <span id="ord_apiStatus2" class="badge"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="tabs flex gap-2 mb-4">
+          <button id="ord_tabPurchase" class="btn" aria-selected="true">طلب مشتريات</button>
+          <button id="ord_tabIssue" class="btn" aria-selected="false">صرف من المخزون</button>
+        </div>
+
+        <form id="ord_formPurchase" class="grid md:grid-cols-2 gap-4">
+          <div><label class="label">تاريخ الطلب</label><input type="date" class="input" id="ord_p_date" /></div>
+          <div><label class="label">نوع القطعة المطلوبة</label><input type="text" class="input" id="ord_p_partType" placeholder="مثال: مضخة مياه" /></div>
+          <div><label class="label">الكمية</label><input type="number" min="1" class="input" id="ord_p_qty" value="1" /></div>
+          <div><label class="label">اسم مقدّم الطلب</label><input type="text" class="input" id="ord_p_requester" placeholder="اسم الموظف" /></div>
+          <div class="md:col-span-2">
+            <label class="label">صورة للقطعة التالفة (التقاط أو رفع ملف)</label>
+            <input type="file" class="input" id="ord_p_damagePhoto" accept="image/*" capture="environment" />
+            <div id="ord_p_preview" class="mt-2"></div>
+          </div>
+          <div class="md:col-span-2 flex justify-end gap-2">
+            <button type="reset" class="btn btn-ghost">مسح</button>
+            <button type="submit" class="btn btn-primary">إرسال طلب مشتريات</button>
+          </div>
+        </form>
+
+        <form id="ord_formIssue" class="grid md:grid-cols-2 gap-4 hidden">
+          <div><label class="label">تاريخ الطلب</label><input type="date" class="input" id="ord_i_date" /></div>
+          <div><label class="label">نوع القطعة</label><input type="text" class="input" id="ord_i_partType" placeholder="مثال: فلتر زيت" /></div>
+          <div><label class="label">مقاس القطعة</label><input type="text" class="input" id="ord_i_size" placeholder="مثال: 2"/></div>
+          <div><label class="label">الكمية</label><input type="number" min="1" class="input" id="ord_i_qty" value="1" /></div>
+          <div class="md:col-span-2">
+            <label class="label">صورة للقطعة التالفة (اختياري)</label>
+            <input type="file" class="input" id="ord_i_damagePhoto" accept="image/*" capture="environment" />
+            <div id="ord_i_preview" class="mt-2"></div>
+          </div>
+          <div class="md:col-span-2 flex justify-end gap-2">
+            <button type="reset" class="btn btn-ghost">مسح</button>
+            <button type="submit" class="btn btn-primary">إرسال طلب صرف</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-xl font-semibold">طلبات بانتظار اعتماد المشرف</h3>
+          <div class="text-sm text-gray-500">المشرف يستطيع <span class="font-medium">الموافقة</span> أو <span class="font-medium">الرفض</span> لكل طلب.</div>
+        </div>
+        <div id="ord_pendingList" class="grid gap-4"></div>
+      </div>
+
+      <div class="card">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-xl font-semibold">المخزون</h3>
+          <div class="flex gap-2">
+            <button id="ord_btnAddItem" class="btn btn-ghost">إضافة صنف</button>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="min-w-full table" id="ord_stockTable">
+            <thead><tr class="text-right"><th class="p-2">القطعة</th><th class="p-2">المقاس</th><th class="p-2">الرصيد</th><th class="p-2">إجراءات</th></tr></thead>
+            <tbody id="ord_stockBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Login modal -->
+    <div id="ord_loginModal" class="fixed inset-0 bg-black/40 hidden items-center justify-center p-4">
+      <div class="bg-white rounded-2xl shadow p-6 w-full max-w-sm">
+        <h3 class="text-lg font-semibold mb-4">تسجيل الدخول</h3>
+        <div class="mb-3">
+          <label class="label">البريد الإلكتروني</label>
+          <input id="ord_loginEmail" class="input" placeholder="admin@example.com" />
+        </div>
+        <div class="mb-4">
+          <label class="label">كلمة المرور</label>
+          <input id="ord_loginPassword" type="password" class="input" placeholder="••••••••" />
+        </div>
+        <div class="flex justify-end gap-2">
+          <button id="ord_cancelLogin" class="btn btn-ghost">إلغاء</button>
+          <button id="ord_doLogin" class="btn btn-primary">دخول</button>
+        </div>
+        <p class="text-xs text-gray-500 mt-3">للتجربة: admin@example.com / Admin@123</p>
+      </div>
+    </div>
+  </template>
+
+  <script>
+    // ====================== State & Utilities (shared) ======================
+    const LS_KEYS = { incidents: 'knaz_incidents', claims: 'knaz_claims', users:'knaz_users', acl:'knaz_acl',
+                      ORD_API:'knaz:apiBase', ORD_TOKEN:'knaz:token', ORD_USER:'knaz:user' };
+    const readLS = (k, def=[]) => JSON.parse(localStorage.getItem(k) || JSON.stringify(def));
+    const writeLS = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+
+    const ROLES = { ADMIN:'ADMIN', CLAIMS:'CLAIMS', VIEWER:'VIEWER' };
+    const DEFAULT_USER = { name:'مدير النظام', role: ROLES.ADMIN };
+    let users = readLS(LS_KEYS.users, [DEFAULT_USER, {name:'موظف مطالبات', role:ROLES.CLAIMS}, {name:'مشاهد', role:ROLES.VIEWER}]);
+    let currentUser = JSON.parse(localStorage.getItem('knaz_user')||JSON.stringify(DEFAULT_USER));
+    let ACL = readLS(LS_KEYS.acl, {
+      [ROLES.ADMIN]:  { addIncident:true, editIncident:true, deleteIncident:true, updateClaim:true, export:true, ordersAdmin:true },
+      [ROLES.CLAIMS]: { addIncident:true, editIncident:true, deleteIncident:false, updateClaim:true, export:true, ordersAdmin:false },
+      [ROLES.VIEWER]: { addIncident:false, editIncident:false, deleteIncident:false, updateClaim:false, export:false, ordersAdmin:false }
+    });
+    let incidents = readLS(LS_KEYS.incidents);
+    let claims = readLS(LS_KEYS.claims);
+
+    const canAddIncident   = () => !!ACL[currentUser.role]?.addIncident;
+    const canEditIncident  = () => !!ACL[currentUser.role]?.editIncident;
+    const canDeleteIncident= () => !!ACL[currentUser.role]?.deleteIncident;
+    const canUpdateClaim   = () => !!ACL[currentUser.role]?.updateClaim;
+    const canExport        = () => !!ACL[currentUser.role]?.export;
+    const isOrdersAdmin    = () => !!ACL[currentUser.role]?.ordersAdmin;
+
+    const screen = document.getElementById('screen');
+    const title  = document.getElementById('title');
+    const roleSel= document.getElementById('roleSel');
+    const userNameEl = document.getElementById('userName');
+
+    function setTopUser() {
+      userNameEl.textContent = `${currentUser.name} — ${currentUser.role==='ADMIN'?'مسؤول':currentUser.role==='CLAIMS'?'مسؤول مطالبات':'مشاهد'}`;
+    }
+
+    document.querySelectorAll('.sidebar-menu a').forEach(a=>{
+      a.addEventListener('click', e=>{
+        e.preventDefault();
+        document.querySelectorAll('.sidebar-menu a').forEach(x=>x.classList.remove('active'));
+        a.classList.add('active');
+        load(a.dataset.screen);
+      });
+    });
+
+    function load(name){
+      if(name==='incidents'){ title.innerHTML='<i class="fa-solid fa-car-burst"></i> الحوادث'; renderIncidents(); }
+      else if(name==='claims'){ title.innerHTML='<i class="fa-solid fa-file-invoice-dollar"></i> المطالبات'; renderClaims(); }
+      else if(name==='orders'){ title.innerHTML='<i class="fa-solid fa-cart-shopping"></i> الطلبات/المشتريات'; renderOrders(); }
+      else if(name==='settings'){ title.innerHTML='<i class="fa-solid fa-gear"></i> الإعدادات'; renderSettingsPage(); }
+      else { title.innerHTML='<i class="fa-solid fa-gauge"></i> لوحة التحكم'; renderDashboard(); }
+      setTopUser();
+    }
+
+    // Populate roles
+    function populateRoleSel(){
+      roleSel.innerHTML='';
+      [ROLES.ADMIN, ROLES.CLAIMS, ROLES.VIEWER].forEach(r=>{ const o=document.createElement('option'); o.value=r; o.textContent=(r==='ADMIN'?'مسؤول':r==='CLAIMS'?'مسؤول مطالبات':'مشاهد'); roleSel.appendChild(o); });
+      roleSel.value = currentUser.role;
+    }
+    populateRoleSel();
+    roleSel.addEventListener('change', ()=>{ currentUser.role = roleSel.value; localStorage.setItem('knaz_user', JSON.stringify(currentUser)); load(document.querySelector('.sidebar-menu a.active')?.dataset.screen||'dashboard'); });
+
+    // Helpers
+    const rangeYears=(start=2018,end=2026)=>{const arr=[]; for(let y=end;y>=start;y--) arr.push(y); return arr;}
+    const money=n=>Number(n).toLocaleString('ar-SA',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const uid=()=> 'INC-'+Date.now()+'-'+Math.floor(Math.random()*1000);
+
+    // ====================== Incidents ======================
+    function renderIncidents(){
+      screen.innerHTML = document.getElementById('incidentsTpl').innerHTML;
+      const modelSel = document.getElementById('model');
+      rangeYears(2018, 2026).forEach(y=>{ const o=document.createElement('option'); o.value=y; o.textContent=y; modelSel.appendChild(o); });
+      const today = new Date().toISOString().slice(0,10);
+      document.getElementById('accDate').value = today;
+      document.getElementById('estDate').value = today;
+
+      document.getElementById('photos').addEventListener('change', e=>{
+        const wrap = document.getElementById('photosPreview'); wrap.innerHTML='';
+        [...e.target.files].forEach(f=>{
+          const img = document.createElement('img');
+          img.style.width='96px'; img.style.height='96px'; img.style.objectFit='cover'; img.style.borderRadius='10px'; img.style.border='1px solid var(--border-color)';
+          img.alt = f.name; img.title = f.name;
+          const r = new FileReader(); r.onload = ev => img.src = ev.target.result; r.readAsDataURL(f);
+          wrap.appendChild(img);
+        });
+      });
+
+      document.getElementById('incidentForm').addEventListener('submit', e=>{
+        e.preventDefault();
+        const rpt = document.getElementById('reportPdf').files[0];
+        const est = document.getElementById('estimatePdf').files[0];
+        if(!rpt || !est){ alert('يجب رفع تقريري PDF (الحادث والتقدير).'); return; }
+        if(!canAddIncident()){ alert('لا تملك صلاحية إضافة الحوادث.'); return; }
+
+        const photoFiles = document.getElementById('photos').files;
+        const photoPromises = [...photoFiles].map(f=> new Promise(res=>{ const r=new FileReader(); r.onload=ev=>res({name:f.name,data:ev.target.result}); r.readAsDataURL(f); }));
+        const rpPromise = new Promise(res=>{ const r=new FileReader(); r.onload=ev=>res({name:rpt.name,data:ev.target.result}); r.readAsDataURL(rpt); });
+        const esPromise = new Promise(res=>{ const r=new FileReader(); r.onload=ev=>res({name:est.name,data:ev.target.result}); r.readAsDataURL(est); });
+
+        Promise.all([Promise.all(photoPromises), rpPromise, esPromise]).then(([photos,reportPDF,estimatePDF])=>{
+          const inc = {
+            id: uid(),
+            customerName: document.getElementById('cName').value.trim(),
+            customerNID: document.getElementById('cNid').value.trim(),
+            accidentDate: document.getElementById('accDate').value,
+            accidentNo: document.getElementById('accNo').value.trim(),
+            carType: document.getElementById('carType').value.trim(),
+            plate: document.getElementById('plate').value.trim(),
+            model: document.getElementById('model').value,
+            authority: document.getElementById('authority').value,
+            fault: document.getElementById('fault').value,
+            insurer: document.getElementById('insurer').value.trim(),
+            estimateDate: document.getElementById('estDate').value,
+            estimateNo: document.getElementById('estNo').value.trim(),
+            estimator: document.getElementById('estPerson').value.trim(),
+            estimateAmount: Number(document.getElementById('estAmount').value||0),
+            notes: document.getElementById('notes').value.trim(),
+            photos,
+            reportPDF,
+            estimatePDF,
+            createdAt: new Date().toISOString()
+          };
+          incidents.unshift(inc); writeLS(LS_KEYS.incidents, incidents);
+
+          const claim = {
+            id: 'CLM-'+inc.id,
+            carType: inc.carType,
+            plate: inc.plate,
+            insurer: inc.insurer,
+            estimateNo: inc.estimateNo,
+            compensation: inc.estimateAmount,
+            reportPDF: inc.reportPDF,
+            estimatePDF: inc.estimatePDF,
+            status: 'مرفوعة',
+            fromIncidentId: inc.id,
+            createdAt: new Date().toISOString()
+          };
+          claims.unshift(claim); writeLS(LS_KEYS.claims, claims);
+
+          alert('تم حفظ الحادث وإنشاء المطالبة بنجاح، سيتم تحويلك إلى شاشة المطالبات.');
+          load('claims');
+        });
+      });
+
+      document.getElementById('resetBtn').addEventListener('click',()=>{
+        if(!canEditIncident()){ alert('لا تملك صلاحية تعديل الحوادث.'); return; }
+        document.getElementById('incidentForm').reset();
+        document.getElementById('photosPreview').innerHTML='';
+      });
+
+      const exBtn = document.getElementById('exportIncidentsPdf');
+      if(canExport()) exBtn.addEventListener('click', exportIncidentsPDF); else exBtn.setAttribute('disabled','disabled');
+
+      renderIncidentsTable();
+    }
+
+    function renderIncidentsTable(){
+      const tb = screen.querySelector('#incidentsTable tbody');
+      tb.innerHTML = '';
+      if(incidents.length===0){
+        const tr=document.createElement('tr');
+        tr.innerHTML = '<td colspan="7" style="text-align:center;padding:16px">لا توجد بيانات</td>'; tb.appendChild(tr); return;
+      }
+      incidents.forEach((inc,i)=>{
+        const tr=document.createElement('tr');
+        const actions = [];
+        actions.push(`<button class="btn" data-act="view" data-id="${inc.id}"><i class="fa-regular fa-eye"></i> عرض</button>`);
+        if(canEditIncident()) actions.push(`<button class="btn" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff" data-act="edit" data-id="${inc.id}"><i class="fa-solid fa-pen"></i> تعديل</button>`);
+        if(canDeleteIncident()) actions.push(`<button class="btn btn-danger" data-act="del" data-id="${inc.id}"><i class="fa-solid fa-trash"></i> حذف</button>`);
+        actions.push(`<button class="btn btn-primary" data-act="pdf" data-id="${inc.id}"><i class="fa-regular fa-file-pdf"></i> تقرير</button>`);
+        tr.innerHTML = `
+          <td>${i+1}</td>
+          <td>${inc.customerName}</td>
+          <td>${inc.accidentDate}</td>
+          <td>${inc.carType} (${inc.model})</td>
+          <td>${inc.plate}</td>
+          <td>${inc.insurer}</td>
+          <td style="display:flex;gap:6px;flex-wrap:wrap">${actions.join(' ')}</td>`;
+        tb.appendChild(tr);
+      });
+      tb.querySelectorAll('button').forEach(b=>b.addEventListener('click',incidentRowAction));
+    }
+
+    function incidentRowAction(e){
+      const id = e.currentTarget.dataset.id; const act=e.currentTarget.dataset.act;
+      const idx = incidents.findIndex(x=>x.id===id); if(idx<0) return;
+      if(act==='del'){
+        if(!canDeleteIncident()){ alert('لا تملك صلاحية حذف الحوادث.'); return; }
+        if(confirm('تأكيد حذف الحادث؟')){ incidents.splice(idx,1); writeLS(LS_KEYS.incidents,incidents); renderIncidentsTable(); }
+      } else if(act==='view'){
+        const inc=incidents[idx];
+        const win = window.open('', '_blank');
+        win.document.write(`<html dir=rtl><head><title>تفاصيل حادث</title></head><body>`+
+          `<h3>تفاصيل حادث #${inc.accidentNo}</h3>`+
+          `<pre style="white-space:pre-wrap">${JSON.stringify(inc,null,2)}</pre>`+
+          `</body></html>`);
+      } else if(act==='edit'){
+        if(!canEditIncident()){ alert('لا تملك صلاحية تعديل الحوادث.'); return; }
+        const inc=incidents[idx];
+        load('incidents');
+        setTimeout(()=>{
+          document.getElementById('cName').value = inc.customerName;
+          document.getElementById('cNid').value = inc.customerNID;
+          document.getElementById('accDate').value = inc.accidentDate;
+          document.getElementById('accNo').value = inc.accidentNo;
+          document.getElementById('carType').value = inc.carType;
+          document.getElementById('plate').value = inc.plate;
+          document.getElementById('model').value = inc.model;
+          document.getElementById('authority').value = inc.authority;
+          document.getElementById('fault').value = inc.fault;
+          document.getElementById('insurer').value = inc.insurer;
+          document.getElementById('estDate').value = inc.estimateDate;
+          document.getElementById('estNo').value = inc.estimateNo;
+          document.getElementById('estPerson').value = inc.estimator;
+          document.getElementById('estAmount').value = inc.estimateAmount;
+          document.getElementById('notes').value = inc.notes;
+          alert('تم تحميل بيانات الحادث للتحرير. بعد التعديل اضغط حفظ.');
+        }, 50);
+      } else if(act==='pdf'){
+        const inc=incidents[idx]; exportIncidentDetailsPDF(inc);
+      }
+    }
+
+    async function exportIncidentsPDF(){
+      const { jsPDF } = window.jspdf; const doc = new jsPDF({orientation:'p', unit:'pt', format:'a4'});
+      let y = 40; doc.setFontSize(14); doc.text('سجل الحوادث', 40, y); y+=20;
+      doc.setFontSize(10);
+      incidents.forEach((inc, i)=>{
+        const row = `${i+1}. ${inc.customerName} | ${inc.accidentDate} | ${inc.carType}(${inc.model}) | ${inc.plate} | ${inc.insurer}`;
+        const lines = doc.splitTextToSize(row, 520);
+        lines.forEach(line=>{ doc.text(line, 40, y); y+=14; if(y>780){ doc.addPage(); y=40; } });
+      });
+      doc.save('incidents.pdf');
+    }
+
+    function exportIncidentDetailsPDF(inc){
+      if(!canExport()){ alert('لا تملك صلاحية التصدير/الطباعة.'); return; }
+      const { jsPDF } = window.jspdf; const doc = new jsPDF({orientation:'p', unit:'pt', format:'a4'});
+      let y=50; doc.setFontSize(16); doc.text(`تقرير حادث #${inc.accidentNo}`, 40, y); y+=20; doc.setFontSize(10);
+      const fields = [
+        ['اسم العميل', inc.customerName],['رقم الهوية', inc.customerNID],['تاريخ الحادث', inc.accidentDate],['رقم الحادث', inc.accidentNo],
+        ['نوع السيارة', inc.carType],['رقم اللوحة', inc.plate],['الموديل', inc.model],['الجهة المباشرة', inc.authority],
+        ['نسبة الخطأ', inc.fault],['شركة التأمين', inc.insurer],['تاريخ التقدير', inc.estimateDate],['رقم التقدير', inc.estimateNo],
+        ['اسم المقدر', inc.estimator],['مبلغ التقدير', money(inc.estimateAmount)],['ملاحظات', inc.notes||'-']
+      ];
+      fields.forEach(r=>{ const line = `${r[0]}: ${r[1]||'-'}`; const lines = doc.splitTextToSize(line, 520); lines.forEach(s=>{ doc.text(s, 40, y); y+=14; if(y>760){ doc.addPage(); y=40; } }); });
+      if(inc.photos && inc.photos.length){
+        y+=10; doc.setFontSize(12); doc.text('صور الحادث:', 40, y); y+=10;
+        const w=120,h=90; let x=40; inc.photos.slice(0,6).forEach(p=>{
+          try{ doc.addImage(p.data, 'JPEG', x, y, w, h); }catch(e){ try{ doc.addImage(p.data, 'PNG', x, y, w, h);}catch(_){} }
+          x+=w+10; if(x>520){ x=40; y+=h+10; if(y>760){ doc.addPage(); y=40; } }
+        });
+      }
+      doc.save(`incident_${inc.id}.pdf`);
+    }
+
+    // ====================== Claims ======================
+    function renderClaims(){
+      screen.innerHTML = document.getElementById('claimsTpl').innerHTML;
+      const tb = document.querySelector('#claimsTable tbody');
+      tb.innerHTML='';
+      if(claims.length===0){ tb.innerHTML='<tr><td colspan="10" style="text-align:center;padding:16px">لا توجد مطالبات</td></tr>'; return; }
+      claims.forEach((c,i)=>{
+        const tr=document.createElement('tr');
+        tr.innerHTML=`
+          <td>${i+1}</td>
+          <td>${c.carType}</td>
+          <td>${c.plate}</td>
+          <td>${c.insurer}</td>
+          <td>${c.estimateNo}</td>
+          <td>${money(c.compensation)}</td>
+          <td>
+            <a class="btn" href="${c.reportPDF?.data}" download="report.pdf"><i class="fa-regular fa-file-pdf"></i> التقرير</a>
+            <a class="btn" href="${c.estimatePDF?.data}" download="estimate.pdf"><i class="fa-regular fa-file-pdf"></i> التقدير</a>
+          </td>
+          <td>
+            <span class="badge ${c.status==='مرفوعة'?'badge-success':''}">${c.status}</span>
+          </td>
+          <td>
+            <select class="input upd" data-id="${c.id}" ${canUpdateClaim()?'' : 'disabled'}>
+              <option ${c.status==='مرفوعة'?'selected':''}>مرفوعة</option>
+              <option ${c.status==='تحت التسوية'?'selected':''}>تحت التسوية</option>
+              <option ${c.status==='نواقص'?'selected':''}>نواقص</option>
+              <option ${c.status==='مدفوعة'?'selected':''}>مدفوعة</option>
+            </select>
+          </td>
+          <td><button class="btn btn-primary" data-act="print" data-id="${c.id}"><i class="fa-solid fa-print"></i> نموذج</button></td>`;
+        tb.appendChild(tr);
+      });
+      tb.querySelectorAll('select.upd').forEach(sel=>sel.addEventListener('change',e=>{
+        if(!canUpdateClaim()){ alert('لا تملك صلاحية تحديث حالة المطالبة.'); e.preventDefault(); return; }
+        const id=e.target.dataset.id; const v=e.target.value; const idx=claims.findIndex(x=>x.id===id);
+        if(idx>-1){ claims[idx].status=v; writeLS(LS_KEYS.claims,claims); renderClaims(); }
+      }));
+      tb.querySelectorAll('button[data-act="print"]').forEach(b=>b.addEventListener('click', e=>{
+        const id=e.currentTarget.dataset.id; const c=claims.find(x=>x.id===id); if(!c) return; printClaimForm(c);
+      }));
+
+      const exBtn = document.getElementById('exportClaimsPdf');
+      if(canExport()) exBtn.addEventListener('click', exportClaimsPDF); else exBtn.setAttribute('disabled','disabled');
+    }
+
+    function exportClaimsPDF(){
+      const { jsPDF } = window.jspdf; const doc = new jsPDF({orientation:'p', unit:'pt', format:'a4'});
+      let y = 40; doc.setFontSize(14); doc.text('سجل المطالبات', 40, y); y+=20; doc.setFontSize(10);
+      claims.forEach((c,i)=>{
+        const row = `${i+1}. ${c.carType} | ${c.plate} | ${c.insurer} | تقدير #${c.estimateNo} | مبلغ ${c.compensation}`;
+        const lines = doc.splitTextToSize(row, 520);
+        lines.forEach(line=>{ doc.text(line, 40, y); y+=14; if(y>780){ doc.addPage(); y=40; } });
+      });
+      doc.save('claims.pdf');
+    }
+
+    function printClaimForm(c){
+      const { jsPDF } = window.jspdf; const doc = new jsPDF({orientation:'p', unit:'pt', format:'a4'});
+      let y=50; doc.setFontSize(16); doc.text('نموذج مطالبة', 40, y); y+=24; doc.setFontSize(11);
+      const fld = (label, value)=>{ doc.text(`${label}: ${value||'-'}`, 40, y); y+=18; if(y>780){ doc.addPage(); y=40; } };
+      fld('نوع السيارة', c.carType); fld('رقم اللوحة', c.plate); fld('شركة التأمين', c.insurer);
+      fld('رقم التقدير', c.estimateNo); fld('مبلغ التعويض', money(c.compensation)); fld('الحالة الحالية', c.status);
+      doc.setLineWidth(0.5); doc.line(40,y,555,y); y+=18; doc.text('توقيع الموظف: ______________________', 40, y); y+=24; doc.text('توقيع العميل: ______________________', 40, y);
+      doc.save(`claim_${c.id}.pdf`);
+    }
+
+    // ====================== Dashboard ======================
+    function renderDashboard(){
+      screen.innerHTML = document.getElementById('dashboardTpl').innerHTML;
+      document.getElementById('kInc').textContent = incidents.length;
+      document.getElementById('kClm').textContent = claims.length;
+      // Hook orders health quick check controls (same IDs used in orders page)
+      const apiInput = document.getElementById('ord_apiBase'); // will be null in dashboard
+      const apiInput2 = document.getElementById('ord_apiBase2');
+      const saveBtn2 = document.getElementById('ord_saveApiBase2');
+      const badge2 = document.getElementById('ord_apiStatus2');
+      const api = localStorage.getItem(LS_KEYS.ORD_API) || 'http://localhost:4000';
+      const todayTag = document.getElementById('ord_today');
+      if(todayTag) todayTag.textContent = `اليوم: ${new Date().toLocaleDateString('ar-SA')}`;
+      if(apiInput2){ apiInput2.value = api; }
+      if(saveBtn2){
+        saveBtn2.addEventListener('click', async ()=>{
+          localStorage.setItem(LS_KEYS.ORD_API, (apiInput2.value||'').trim());
+          await ord_checkHealth(badge2);
+        });
+        ord_checkHealth(badge2);
+      }
+    }
+
+    // ====================== Settings ======================
+    function renderSettingsPage(){
+      screen.innerHTML = document.getElementById('settingsTpl').innerHTML;
+      const tabs = screen.querySelectorAll('.tabBtn');
+      tabs.forEach(t=>t.addEventListener('click',()=>{ tabs.forEach(x=>x.classList.remove('active')); t.classList.add('active'); renderSettings(t.dataset.tab); }));
+      renderSettings('users');
+    }
+
+    function renderSettings(tab){
+      const root = document.getElementById('settingsContent');
+      if(tab==='users'){
+        root.innerHTML = `
+          <div class="grid md:grid-cols-2 gap-3">
+            <div class="card">
+              <h4 class="font-bold mb-2">المستخدم الحالي</h4>
+              <div class="grid md:grid-cols-2 gap-3">
+                <div>
+                  <label>اختيار مستخدم</label>
+                  <select id="userPick" class="input"></select>
+                </div>
+                <div>
+                  <label>الدور</label>
+                  <span class="inline-block rounded-full bg-slate-200 px-3 py-2" id="curRole"></span>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <h4 class="font-bold mb-2">إضافة مستخدم</h4>
+              <div class="grid md:grid-cols-3 gap-3 items-end">
+                <div><label>الاسم</label><input id="newUserName" class="input" placeholder="مثال: أحمد"/></div>
+                <div>
+                  <label>الدور</label>
+                  <select id="newUserRole" class="input">
+                    <option value="ADMIN">مسؤول</option>
+                    <option value="CLAIMS">مسؤول مطالبات</option>
+                    <option value="VIEWER">مشاهد</option>
+                  </select>
+                </div>
+                <div><button id="addUserBtn" class="btn btn-primary" type="button"><i class="fa-solid fa-user-plus"></i> إضافة</button></div>
+              </div>
+            </div>
+          </div>
+          <div class="card mt-3">
+            <h4 class="font-bold mb-2">قائمة المستخدمين</h4>
+            <table class="min-w-full" id="usersTable">
+              <thead><tr><th>#</th><th>الاسم</th><th>الدور</th><th>إجراءات</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>`;
+        const userPick = root.querySelector('#userPick'); userPick.innerHTML='';
+        users.forEach((u,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=`${u.name} — ${u.role}`; if(u.name===currentUser.name && u.role===currentUser.role) o.selected=true; userPick.appendChild(o); });
+        root.querySelector('#curRole').textContent = (currentUser.role==='ADMIN'?'مسؤول':currentUser.role==='CLAIMS'?'مسؤول مطالبات':'مشاهد');
+        userPick.addEventListener('change',()=>{ const u=users[Number(userPick.value)]; currentUser=u; localStorage.setItem('knaz_user', JSON.stringify(currentUser)); roleSel.value=currentUser.role; load(document.querySelector('.sidebar-menu a.active')?.dataset.screen||'incidents'); renderSettings('users'); });
+        root.querySelector('#addUserBtn').addEventListener('click',()=>{ const name=root.querySelector('#newUserName').value.trim(); const role=root.querySelector('#newUserRole').value; if(!name) return alert('أدخل الاسم'); users.push({name,role}); writeLS(LS_KEYS.users, users); renderSettings('users'); });
+        const tb = root.querySelector('#usersTable tbody'); tb.innerHTML='';
+        users.forEach((u,i)=>{
+          const tr=document.createElement('tr');
+          tr.innerHTML = `<td>${i+1}</td><td>${u.name}</td><td>${u.role}</td>
+                          <td style="display:flex;gap:6px">
+                            <button class="btn" data-i="${i}" data-act="edit"><i class="fa-solid fa-pen"></i> تعديل</button>
+                            <button class="btn btn-danger" data-i="${i}" data-act="del"><i class="fa-solid fa-trash"></i> حذف</button>
+                          </td>`;
+          tb.appendChild(tr);
+        });
+        tb.querySelectorAll('button').forEach(b=>b.addEventListener('click',e=>{
+          const i=Number(e.currentTarget.dataset.i); const act=e.currentTarget.dataset.act;
+          if(act==='del'){ if(!confirm('حذف المستخدم؟')) return; users.splice(i,1); writeLS(LS_KEYS.users,users); renderSettings('users'); }
+          else if(act==='edit'){
+            const nu = prompt('اسم المستخدم', users[i].name); if(!nu) return; const nr = prompt('الدور (ADMIN/CLAIMS/VIEWER)', users[i].role); if(!nr) return; users[i]={name:nu, role:nr}; writeLS(LS_KEYS.users,users); renderSettings('users');
+          }
+        }));
+      }
+      if(tab==='perms'){
+        root.innerHTML = `
+          <div class="card">
+            <h4 class="font-bold mb-2">مصفوفة الصلاحيات حسب الدور</h4>
+            <table class="min-w-full" id="aclTable">
+              <thead><tr><th>الدور</th><th>إضافة حادث</th><th>تعديل حادث</th><th>حذف حادث</th><th>تحديث حالة مطالبة</th><th>تصدير/طباعة</th><th>إدارة الطلبات/المخزون</th></tr></thead>
+              <tbody>
+                ${Object.keys(ROLES).map(rk=>{
+                  const r = ROLES[rk]; const a = ACL[r];
+                  return `<tr data-role="${r}"><td>${r}</td>
+                    <td><input type="checkbox" data-key="addIncident" ${a.addIncident?'checked':''}></td>
+                    <td><input type="checkbox" data-key="editIncident" ${a.editIncident?'checked':''}></td>
+                    <td><input type="checkbox" data-key="deleteIncident" ${a.deleteIncident?'checked':''}></td>
+                    <td><input type="checkbox" data-key="updateClaim" ${a.updateClaim?'checked':''}></td>
+                    <td><input type="checkbox" data-key="export" ${a.export?'checked':''}></td>
+                    <td><input type="checkbox" data-key="ordersAdmin" ${a.ordersAdmin?'checked':''}></td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+            <div class="mt-3"><button id="saveAcl" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> حفظ الصلاحيات</button></div>
+          </div>`;
+        root.querySelector('#saveAcl').addEventListener('click',()=>{
+          const rows = root.querySelectorAll('#aclTable tbody tr');
+          rows.forEach(row=>{
+            const role=row.dataset.role; const inputs=row.querySelectorAll('input[type="checkbox"]');
+            inputs.forEach(inp=>{ ACL[role][inp.dataset.key]=inp.checked; });
+          });
+          writeLS(LS_KEYS.acl, ACL);
+          alert('تم حفظ الصلاحيات.');
+        });
+      }
+    }
+
+    // ====================== Orders / Purchases (API-backed) ======================
+    function renderOrders(){
+      screen.innerHTML = document.getElementById('ordersTpl').innerHTML;
+      // date + today
+      const todayTag = document.getElementById('ord_today'); if(todayTag) todayTag.textContent = `اليوم: ${new Date().toLocaleDateString('ar-SA')}`;
+      const todayStr = () => new Date().toISOString().slice(0,10);
+      ['ord_p_date','ord_i_date'].forEach(id => { const el = document.getElementById(id); if(el) el.value = todayStr(); });
+
+      // user session
+      let ord_token = localStorage.getItem(LS_KEYS.ORD_TOKEN) || '';
+      let ord_user = JSON.parse(localStorage.getItem(LS_KEYS.ORD_USER) || 'null');
+      const ord_apiInputTop = document.getElementById('ord_apiBase2');
+      const ord_apiInputDash = document.getElementById('ord_apiBase'); // may be null if dashboard not visible
+      const ord_apiStatusTop = document.getElementById('ord_apiStatus2');
+      const ord_apiBase = localStorage.getItem(LS_KEYS.ORD_API) || 'http://localhost:4000';
+      if(ord_apiInputTop) ord_apiInputTop.value = ord_apiBase;
+
+      function ord_requireAdminUI(){
+        // map to unified ACL
+        const show = isOrdersAdmin();
+        screen.querySelectorAll('#ord_stockTable .btn, #ord_btnAddItem').forEach(el=>{
+          // add data-admin attribute to identify; allow delete/edit/add only for admin
+        });
+        // simpler: toggle buttons with data-admin
+        screen.querySelectorAll('[data-orders-admin]').forEach(el => el.classList.toggle('hidden', !show));
+      }
+
+      function ord_setUserUI(){
+        const ui = document.getElementById('ord_userInfo');
+        const btnLogin = document.getElementById('ord_btnLogin');
+        const btnLogout = document.getElementById('ord_btnLogout');
+        if(ord_token && ord_user){
+          ui.classList.remove('hidden');
+          ui.textContent = `مرحبًا ${ord_user.name} — الدور: ${ord_user.role}`;
+          btnLogin.classList.add('hidden');
+          btnLogout.classList.remove('hidden');
+        } else {
+          ui.classList.add('hidden');
+          btnLogin.classList.remove('hidden');
+          btnLogout.classList.add('hidden');
+        }
+        ord_requireAdminUI();
+      }
+
+      async function ord_checkHealth(badgeEl=ord_apiStatusTop){
+        const base = (ord_apiInputTop?.value || ord_apiBase).trim();
+        try{
+          const r = await fetch(base + '/health');
+          if(r.ok){ badgeEl.className='badge badge-success'; badgeEl.textContent='متصل'; }
+          else{ badgeEl.className='badge badge-danger'; badgeEl.textContent='غير متصل'; }
+        }catch{ badgeEl.className='badge badge-danger'; badgeEl.textContent='غير متصل'; }
+      }
+
+      function ord_apiFetch(path, opts={}){
+        const base = (ord_apiInputTop?.value || localStorage.getItem(LS_KEYS.ORD_API) || 'http://localhost:4000').trim();
+        const headers = opts.headers || {};
+        if(ord_token) headers['Authorization'] = `Bearer ${ord_token}`;
+        return fetch(base + path, { ...opts, headers });
+      }
+
+      // Save API base
+      document.getElementById('ord_saveApiBase2').addEventListener('click', async ()=>{
+        localStorage.setItem(LS_KEYS.ORD_API, (ord_apiInputTop.value||'').trim());
+        await ord_checkHealth();
+      });
+      ord_checkHealth();
+
+      // Login modal
+      const loginModal = document.getElementById('ord_loginModal');
+      document.getElementById('ord_btnLogin').onclick = ()=> loginModal.classList.remove('hidden','opacity-0');
+      document.getElementById('ord_cancelLogin').onclick = ()=> loginModal.classList.add('hidden');
+      document.getElementById('ord_btnLogout').onclick = ()=> { ord_token=''; ord_user=null; localStorage.removeItem(LS_KEYS.ORD_TOKEN); localStorage.removeItem(LS_KEYS.ORD_USER); ord_setUserUI(); };
+
+      document.getElementById('ord_doLogin').onclick = async ()=>{
+        try {
+          const email = document.getElementById('ord_loginEmail').value.trim();
+          const password = document.getElementById('ord_loginPassword').value;
+          const base = (ord_apiInputTop?.value || localStorage.getItem(LS_KEYS.ORD_API) || '').trim();
+          if(!email || !password || !base) return alert('أكمل حقول تسجيل الدخول ورابط الخادم');
+          const res = await fetch(base + '/auth/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({email,password}) });
+          if(!res.ok){ const e = await res.json().catch(()=>({error:'فشل الدخول'})); throw new Error(e.error||'فشل الدخول'); }
+          const data = await res.json();
+          ord_token = data.token; ord_user = data.user; localStorage.setItem(LS_KEYS.ORD_TOKEN, ord_token); localStorage.setItem(LS_KEYS.ORD_USER, JSON.stringify(ord_user));
+          loginModal.classList.add('hidden');
+          ord_setUserUI();
+          await ord_refreshAll();
+        } catch(err){ alert(err.message); }
+      };
+
+      function ord_wirePreview(inputId, previewId){
+        const input = document.getElementById(inputId);
+        const preview = document.getElementById(previewId);
+        input.addEventListener('change', ()=>{
+          preview.innerHTML = '';
+          const f = input.files?.[0]; if(!f) return;
+          const url = URL.createObjectURL(f);
+          const img = document.createElement('img');
+          img.src = url; img.alt = 'صورة مرفوعة';
+          img.className = 'mt-2 max-h-56 rounded-xl border';
+          preview.appendChild(img);
+        });
+      }
+      ord_wirePreview('ord_p_damagePhoto','ord_p_preview');
+      ord_wirePreview('ord_i_damagePhoto','ord_i_preview');
+
+      // Tabs
+      const tabPurchase = document.getElementById('ord_tabPurchase');
+      const tabIssue = document.getElementById('ord_tabIssue');
+      const formPurchase = document.getElementById('ord_formPurchase');
+      const formIssue = document.getElementById('ord_formIssue');
+      function ord_selectTab(which){
+        const isPurchase = which==='purchase';
+        tabPurchase.setAttribute('aria-selected', isPurchase);
+        tabIssue.setAttribute('aria-selected', !isPurchase);
+        formPurchase.classList.toggle('hidden', !isPurchase);
+        formIssue.classList.toggle('hidden', isPurchase);
+      }
+      tabPurchase.addEventListener('click', ()=>ord_selectTab('purchase'));
+      tabIssue.addEventListener('click', ()=>ord_selectTab('issue'));
+
+      // Submit handlers
+      formPurchase.addEventListener('submit', async (e)=>{
+        e.preventDefault();
+        const date = document.getElementById('ord_p_date').value || todayStr();
+        const part = document.getElementById('ord_p_partType').value.trim();
+        const qty = Number(document.getElementById('ord_p_qty').value||1);
+        const requester = document.getElementById('ord_p_requester').value.trim();
+        const file = document.getElementById('ord_p_damagePhoto').files?.[0];
+        if(!ord_token) return alert('سجّل الدخول أولاً');
+        if(!part || !qty || !requester) return alert('فضلاً أكمل الحقول المطلوبة');
+        const fd = new FormData();
+        fd.append('type','purchase'); fd.append('date',date); fd.append('part',part); fd.append('size',''); fd.append('qty',String(qty)); fd.append('requester',requester); if(file) fd.append('photo', file);
+        const r = await ord_apiFetch('/requests', { method:'POST', body: fd });
+        if(!r.ok){ const er = await r.json().catch(()=>({error:'فشل إنشاء الطلب'})); return alert(er.error||'فشل إنشاء الطلب'); }
+        e.target.reset(); document.getElementById('ord_p_date').value=todayStr(); document.getElementById('ord_p_preview').innerHTML='';
+        await ord_loadPending();
+        alert('تم إرسال طلب المشتريات');
+      });
+
+      formIssue.addEventListener('submit', async (e)=>{
+        e.preventDefault();
+        const date = document.getElementById('ord_i_date').value || todayStr();
+        const part = document.getElementById('ord_i_partType').value.trim();
+        const size = document.getElementById('ord_i_size').value.trim();
+        const qty = Number(document.getElementById('ord_i_qty').value||1);
+        const file = document.getElementById('ord_i_damagePhoto').files?.[0];
+        if(!ord_token) return alert('سجّل الدخول أولاً');
+        if(!part || !qty) return alert('فضلاً أكمل الحقول المطلوبة');
+        const fd = new FormData();
+        fd.append('type','issue'); fd.append('date',date); fd.append('part',part); fd.append('size',size); fd.append('qty',String(qty)); fd.append('requester',''); if(file) fd.append('photo', file);
+        const r = await ord_apiFetch('/requests', { method:'POST', body: fd });
+        if(!r.ok){ const er = await r.json().catch(()=>({error:'فشل إنشاء الطلب'})); return alert(er.error||'فشل إنشاء الطلب'); }
+        e.target.reset(); document.getElementById('ord_i_date').value=todayStr(); document.getElementById('ord_i_preview').innerHTML='';
+        await ord_loadPending();
+        alert('تم إرسال طلب الصرف');
+      });
+
+      async function ord_loadPending(){
+        if(!ord_token) return;
+        const r = await ord_apiFetch('/requests?status=pending');
+        const list = document.getElementById('ord_pendingList');
+        if(!r.ok){ list.innerHTML = '<div class="text-rose-600">تعذر تحميل الطلبات</div>'; return; }
+        const items = await r.json();
+        list.innerHTML = '';
+        if(items.length===0){ list.innerHTML = '<div class="text-gray-500">لا توجد طلبات حالياً.</div>'; return; }
+        for(const it of items){
+          const node = document.createElement('div');
+          node.className = 'req-row p-4 bg-gray-50 rounded-xl border border-gray-200';
+          node.innerHTML = `
+            <div class="md:col-span-3"><div class="text-xs text-gray-500">النوع</div><div>${it.type === 'issue' ? 'صرف من المخزون' : 'طلب مشتريات'}</div></div>
+            <div class="md:col-span-2"><div class="text-xs text-gray-500">التاريخ</div><div>${it.date}</div></div>
+            <div class="md:col-span-3"><div class="text-xs text-gray-500">القطعة</div><div>${it.part}</div></div>
+            <div class="md:col-span-1"><div class="text-xs text-gray-500">المقاس</div><div>${it.size || '-'}</div></div>
+            <div class="md:col-span-1"><div class="text-xs text-gray-500">الكمية</div><div>${it.qty}</div></div>
+            <div class="md:col-span-2"><div class="text-xs text-gray-500">المقدّم</div><div>${it.requester || '-'}</div></div>
+            <div class="md:col-span-12" id="photo_${it.id}"></div>
+            <div class="md:col-span-12 req-actions">
+              <button class="btn btn-primary" data-orders-admin data-act="approve" data-id="${it.id}">موافقة</button>
+              <button class="btn btn-danger" data-orders-admin data-act="reject" data-id="${it.id}">رفض</button>
+            </div>`;
+          list.appendChild(node);
+          if(it.photo_url){
+            const img = document.createElement('img'); img.src = ( (localStorage.getItem(LS_KEYS.ORD_API)||'').trim() + it.photo_url);
+            img.alt='صورة مرفوعة'; img.className='mt-2 max-h-56 rounded-xl border'; node.querySelector(`#photo_${it.id}`).appendChild(img);
+          }
+        }
+        list.querySelectorAll('button[data-act="approve"]').forEach(btn=>btn.addEventListener('click', async ()=>{
+          if(!isOrdersAdmin()) return alert('فقط المشرف يمكنه الموافقة');
+          const r = await ord_apiFetch(`/requests/${btn.dataset.id}/approve`, { method:'POST' });
+          if(!r.ok){ const e = await r.json().catch(()=>({error:'فشل العملية'})); return alert(e.error||'فشل العملية'); }
+          await ord_loadPending(); await ord_loadInventory(); alert('تمت الموافقة بنجاح');
+        }));
+        list.querySelectorAll('button[data-act="reject"]').forEach(btn=>btn.addEventListener('click', async ()=>{
+          if(!isOrdersAdmin()) return alert('فقط المشرف يمكنه الرفض');
+          const r = await ord_apiFetch(`/requests/${btn.dataset.id}/reject`, { method:'POST' });
+          if(!r.ok){ const e = await r.json().catch(()=>({error:'فشل العملية'})); return alert(e.error||'فشل العملية'); }
+          await ord_loadPending(); alert('تم الرفض');
+        }));
+        ord_requireAdminUI();
+      }
+
+      async function ord_loadInventory(){
+        if(!ord_token) return;
+        const r = await ord_apiFetch('/inventory');
+        const body = document.getElementById('ord_stockBody');
+        if(!r.ok){ body.innerHTML = '<tr><td colspan="4" class="p-2 text-rose-600">تعذر تحميل المخزون</td></tr>'; return; }
+        const rows = await r.json();
+        body.innerHTML = '';
+        for(const item of rows){
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td class="p-2">${item.part}</td>
+            <td class="p-2">${item.size||'-'}</td>
+            <td class="p-2">${item.qty}</td>
+            <td class="p-2 flex gap-2 flex-wrap">
+              <button class="btn btn-ghost" data-orders-admin data-act="edit">تعديل</button>
+              <button class="btn btn-danger" data-orders-admin data-act="del">حذف</button>
+            </td>`;
+          tr.querySelector('[data-act="edit"]').addEventListener('click', async ()=>{
+            if(!isOrdersAdmin()) return alert('صلاحية المشرف مطلوبة');
+            const part = prompt('اسم القطعة', item.part); if(part===null) return;
+            const size = prompt('المقاس', item.size||''); if(size===null) return;
+            const qty = Number(prompt('الرصيد', item.qty)); if(Number.isNaN(qty)) return alert('قيمة غير صالحة');
+            const r = await ord_apiFetch(`/inventory/${item.id}`, { method:'PUT', headers:{ 'Content-Type': 'application/json' }, body: JSON.stringify({ part:part.trim(), size:String(size).trim(), qty }) });
+            if(!r.ok) return alert('فشل التعديل');
+            await ord_loadInventory();
+          });
+          tr.querySelector('[data-act="del"]').addEventListener('click', async ()=>{
+            if(!isOrdersAdmin()) return alert('صلاحية المشرف مطلوبة');
+            if(!confirm('حذف الصنف؟')) return;
+            const r = await ord_apiFetch(`/inventory/${item.id}`, { method:'DELETE' });
+            if(!r.ok) return alert('فشل الحذف');
+            await ord_loadInventory();
+          });
+          body.appendChild(tr);
+        }
+        ord_requireAdminUI();
+      }
+
+      document.getElementById('ord_btnAddItem').addEventListener('click', async ()=>{
+        if(!isOrdersAdmin()) return alert('صلاحية المشرف مطلوبة');
+        const part = prompt('اسم القطعة'); if(!part) return;
+        const size = prompt('المقاس (اختياري)')||'';
+        const qty = Number(prompt('الرصيد الابتدائي', '0')); if(Number.isNaN(qty)) return alert('قيمة غير صالحة');
+        const r = await ord_apiFetch('/inventory', { method:'POST', headers:{ 'Content-Type': 'application/json' }, body: JSON.stringify({ part: part.trim(), size: String(size).trim(), qty }) });
+        if(!r.ok) return alert('فشل إضافة الصنف');
+        await ord_loadInventory();
+      });
+
+      async function ord_refreshAll(){ await Promise.all([ord_loadInventory(), ord_loadPending()]); }
+
+      // init
+      setTopUser();
+      ord_setUserUI();
+      if(ord_token) ord_refreshAll();
+    }
+
+    // ====================== Boot ======================
+    setTopUser();
+    load('dashboard');
+  </script>
+</body>
+</html>
